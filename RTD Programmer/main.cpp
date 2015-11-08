@@ -4,108 +4,8 @@
 #include "stdafx.h"
 #include <stdio.h>
 #include <stdint.h>
-
-static CCyUSBDevice USBDevice;
-static CCyControlEndPoint *ept = USBDevice.ControlEndPt;
-
-static BYTE ReadNakCnt() 
-{
-	ept->Target = TGT_DEVICE;
-	ept->ReqType = REQ_VENDOR;
-	ept->Direction = DIR_FROM_DEVICE;
-	ept->ReqCode = 0xA3;
-	ept->Value = 0;
-	ept->Index = 0;
-
-  UCHAR buf[1];
-	LONG buflen = sizeof(buf);
-  ept->XferData(buf, buflen);
-  return buf[0];
-}
-
-static void SetI2CAddr(BYTE value) 
-{
-	ept->Target = TGT_DEVICE;
-	ept->ReqType = REQ_VENDOR;
-	ept->Direction = DIR_TO_DEVICE;
-	ept->ReqCode = 0xA5;
-	ept->Value = 0;
-	ept->Index = 0;
-
-  UCHAR buf[1];
-  LONG buflen =  1;
-	buf[0] = value;
-  ept->XferData(buf, buflen);
-}
-
-static void WriteBytesToAddr(BYTE reg, BYTE* values, BYTE len)
-{
-	ept->Target    = TGT_DEVICE;
-  ept->ReqType   = REQ_VENDOR;
-  ept->Direction = DIR_TO_DEVICE;
-  ept->ReqCode   = 0xA2;
-  ept->Value     = 0;
-  ept->Index     = 0;
-
-  UCHAR buf[64];
-  if (len > 63)
-  {
-    len = 63;
-  }
-  LONG buflen =  len + 1;
-	buf[0] = reg;
-  for(int idx = 0; idx < len; idx++)
-  {
-    buf[1 + idx] = values[idx];
-  }
-
-  ept->XferData(buf, buflen);
-}
-
-static void ReadBytes(BYTE *dest) 
-{
-	ept->Target = TGT_DEVICE;
-	ept->ReqType = REQ_VENDOR;
-	ept->Direction = DIR_FROM_DEVICE;
-	ept->ReqCode = 0xA4;
-	ept->Value = 0;
-	ept->Index = 0;
-
-  UCHAR buf[64];
-	LONG buflen = sizeof(buf);
-  ept->XferData(buf, buflen);
-  memcpy(dest, buf, buflen);
-}
-
-static void ReadBytesFromAddr(BYTE reg, BYTE* dest, BYTE len)
-{
-	ept->Target    = TGT_DEVICE;
-  ept->ReqType   = REQ_VENDOR;
-  ept->Direction = DIR_TO_DEVICE;
-  ept->ReqCode   = 0xA1;
-  ept->Value     = 0;
-  ept->Index     = 0;
-
-  UCHAR buf[2];
-  LONG buflen = sizeof(buf);
-	buf[0] = reg;
-	buf[1] = len;
-  ept->XferData(buf, buflen);
-  ReadBytes(dest);
-}
-
-static BYTE ReadReg(BYTE reg)
-{
-  BYTE result;
-  ReadBytesFromAddr(reg, &result, 1);
-  return result;
-}
-
-static bool WriteReg(BYTE reg, BYTE value)
-{
-  WriteBytesToAddr(reg, &value, 1);
-  return ReadNakCnt() == 0;
-}
+#include "crc.h"
+#include "i2c.h"
 
 enum ECommondCommandType {
   E_CC_NOOP = 0,
@@ -124,7 +24,7 @@ uint32_t SPICommonCommand(ECommondCommandType cmd_type,
   num_reads &= 3;
   num_writes &= 3;
   write_value &= 0xFFFFFF;
-  BYTE reg_value = (cmd_type << 5) | 
+  uint8_t reg_value = (cmd_type << 5) | 
     (num_writes << 3) |
     (num_reads << 1);
 
@@ -136,7 +36,7 @@ uint32_t SPICommonCommand(ECommondCommandType cmd_type,
     WriteReg(0x66, write_value);
   }
   WriteReg(0x60, reg_value | 1); // Execute the command
-  BYTE b;
+  uint8_t b;
   do {
     b = ReadReg(0x60);
   } while (b & 1);  // TODO: add timeout and reset the controller
@@ -156,7 +56,7 @@ void SPIRead(uint32_t address, uint8_t *data, int32_t len) {
   WriteReg(0x65, address>>8);
   WriteReg(0x66, address);
   WriteReg(0x60, 0x47); // Execute the command
-  BYTE b;
+  uint8_t b;
   do {
     b = ReadReg(0x60);
   } while (b & 1);  // TODO: add timeout and reset the controller
@@ -179,39 +79,39 @@ struct FlashDesc {
 };
 
 static const FlashDesc FlashDevices[] = {
-    // name,        Jedec ID,      sizeK, page size, block sizeK
-    {"AT25DF041A" , 0x1F4401,      512, 256, 64},
-    {"AT25DF161"  , 0x1F4602, 2 * 1024, 256, 64},
-    {"AT26DF081A" , 0x1F4501, 1 * 1024, 256, 64},
-    {"AT26DF0161" , 0x1F4600, 2 * 1024, 256, 64},
-    {"AT26DF161A" , 0x1F4601, 2 * 1024, 256, 64},
-    {"AT25DF321" ,  0x1F4701, 4 * 1024, 256, 64},
-    {"AT25DF512B" , 0x1F6501,       64, 256, 32},
-    {"AT25DF512B" , 0x1F6500,       64, 256, 32},
-    {"AT25DF021"  , 0x1F3200,      256, 256, 64},
-    {"AT26DF641" ,  0x1F4800, 8 * 1024, 256, 64},
+    // name,        Jedec ID,    sizeK, page size, block sizeK
+    {"AT25DF041A" , 0x1F4401,      512,       256, 64},
+    {"AT25DF161"  , 0x1F4602, 2 * 1024,       256, 64},
+    {"AT26DF081A" , 0x1F4501, 1 * 1024,       256, 64},
+    {"AT26DF0161" , 0x1F4600, 2 * 1024,       256, 64},
+    {"AT26DF161A" , 0x1F4601, 2 * 1024,       256, 64},
+    {"AT25DF321" ,  0x1F4701, 4 * 1024,       256, 64},
+    {"AT25DF512B" , 0x1F6501,       64,       256, 32},
+    {"AT25DF512B" , 0x1F6500,       64,       256, 32},
+    {"AT25DF021"  , 0x1F3200,      256,       256, 64},
+    {"AT26DF641" ,  0x1F4800, 8 * 1024,       256, 64},
     // Manufacturer: ST 
-    {"M25P05"     , 0x202010,       64, 256, 32},
-    {"M25P10"     , 0x202011,      128, 256, 32},
-    {"M25P20"     , 0x202012,      256, 256, 64},
-    {"M25P40"     , 0x202013,      512, 256, 64},
-    {"M25P80"     , 0x202014, 1 * 1024, 256, 64},
-    {"M25P16"     , 0x202015, 2 * 1024, 256, 64},
-    {"M25P32"     , 0x202016, 4 * 1024, 256, 64},
-    {"M25P64"     , 0x202017, 8 * 1024, 256, 64},
+    {"M25P05"     , 0x202010,       64,       256, 32},
+    {"M25P10"     , 0x202011,      128,       256, 32},
+    {"M25P20"     , 0x202012,      256,       256, 64},
+    {"M25P40"     , 0x202013,      512,       256, 64},
+    {"M25P80"     , 0x202014, 1 * 1024,       256, 64},
+    {"M25P16"     , 0x202015, 2 * 1024,       256, 64},
+    {"M25P32"     , 0x202016, 4 * 1024,       256, 64},
+    {"M25P64"     , 0x202017, 8 * 1024,       256, 64},
     // Manufacturer: Windbond 
-    {"W25X10"     , 0xEF3011,      128, 256, 64},
-    {"W25X20"     , 0xEF3012,      256, 256, 64},
-    {"W25X40"     , 0xEF3013,      512, 256, 64},
-    {"W25X80"     , 0xEF3014, 1 * 1024, 256, 64},
+    {"W25X10"     , 0xEF3011,      128,       256, 64},
+    {"W25X20"     , 0xEF3012,      256,       256, 64},
+    {"W25X40"     , 0xEF3013,      512,       256, 64},
+    {"W25X80"     , 0xEF3014, 1 * 1024,       256, 64},
     // Manufacturer: Macronix 
-    {"MX25L512"   , 0xC22010,       64, 256, 64},
-    {"MX25L3205"  , 0xC22016, 4 * 1024, 256, 64},
-    {"MX25L6405"  , 0xC22017, 8 * 1024, 256, 64},
-    {"MX25L8005"  , 0xC22014,     1024, 256, 64},
+    {"MX25L512"   , 0xC22010,       64,       256, 64},
+    {"MX25L3205"  , 0xC22016, 4 * 1024,       256, 64},
+    {"MX25L6405"  , 0xC22017, 8 * 1024,       256, 64},
+    {"MX25L8005"  , 0xC22014,     1024,       256, 64},
     // Microchip
-    {"SST25VF512" , 0xBF4800,       64, 256, 32},
-    {"SST25VF032" , 0xBF4A00, 4 * 1024, 256, 32},
+    {"SST25VF512" , 0xBF4800,       64,       256, 32},
+    {"SST25VF032" , 0xBF4A00, 4 * 1024,       256, 32},
     {NULL , 0, 0, 0, 0}
 };
 
@@ -226,7 +126,7 @@ void PrintManufacturer(uint32_t id) {
   }
 }
 
-const FlashDesc* FindChip(uint32_t jdec_id) {
+static const FlashDesc* FindChip(uint32_t jdec_id) {
   const FlashDesc* chip = FlashDevices;
   while (chip->jdec_id != 0) {
     if (chip->jdec_id == jdec_id)
@@ -234,29 +134,6 @@ const FlashDesc* FindChip(uint32_t jdec_id) {
     chip++;
   }
   return NULL;
-}
-
-static unsigned gCrc;
-
-void InitCRC() {
-  gCrc = 0;
-}
-
-void ProcessCRC(const uint8_t *data, int len)
-{
-	int i, j;
-	for (j = len; j; j--, data++) {
-		gCrc ^= (*data << 8);
-		for(i = 8; i; i--) {
-			if (gCrc & 0x8000)
-				gCrc ^= (0x1070 << 3);
-			gCrc <<= 1;
-		}
-	}
-}
-
-uint8_t GetCRC() {
-	return (uint8_t)(gCrc >> 8);
 }
 
 uint8_t SPIComputeCRC(uint32_t start, uint32_t end) {
@@ -269,7 +146,7 @@ uint8_t SPIComputeCRC(uint32_t start, uint32_t end) {
   WriteReg(0x74, end);
 
   WriteReg(0x6f, 0x84);
-  BYTE b;
+  uint8_t b;
   do
   {
     b = ReadReg(0x6f);
@@ -279,8 +156,8 @@ uint8_t SPIComputeCRC(uint32_t start, uint32_t end) {
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-  BYTE b;
-  if (!USBDevice.IsOpen()) {
+  uint8_t b;
+  if (!InitI2C()) {
     printf("Can't connect to the USB device. Check the cable.\n");
     return -1;
   }
@@ -323,10 +200,10 @@ int _tmain(int argc, _TCHAR* argv[])
   printf("Flash status register: 0x%02x\n", b);
 
   FILE *dump = fopen("flash.bin", "wb");
-  int32_t addr = 0;
+  uint32_t addr = 0;
   InitCRC();
   do {
-    BYTE buffer[1024];
+    uint8_t buffer[1024];
     printf("Reading addr %x\r", addr);
     SPIRead(addr, buffer, sizeof(buffer));
     fwrite(buffer, 1, sizeof(buffer), dump);
@@ -337,6 +214,6 @@ int _tmain(int argc, _TCHAR* argv[])
   fclose(dump);
   printf("Our CRC=0x%02x\n", GetCRC());
   printf("Chip CRC = %02x\n", SPIComputeCRC(0, chip->size_kb * 1024 - 1));
-  USBDevice.Close();
+  CloseI2C();
 	return 0;
 }

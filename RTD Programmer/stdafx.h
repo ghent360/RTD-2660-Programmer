@@ -9,6 +9,3 @@
 
 #include <stdio.h>
 #include <tchar.h>
-#include <Windows.h>
-#include "CyAPI.h"
-#include "cyioctl.h"
