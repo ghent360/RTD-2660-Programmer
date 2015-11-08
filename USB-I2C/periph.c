@@ -131,7 +131,7 @@ void DR_READ_FROM_ADDR(void)
 	{
 	  data_length = 64;
 	}
-	if (data_length > 1)
+	if (data_length > 0)
 	{
 	  data_length--;
   	  for(idx = 0; idx < data_length;idx++)
@@ -140,10 +140,6 @@ void DR_READ_FROM_ADDR(void)
 	  }
 	  buffer[idx] = I2CGetByte(1);
 	  data_length++;
-	}
-	else
-	{
-	  buffer[0] = I2CGetByte(1);
 	}
 	I2CSendStop();
   }
@@ -166,19 +162,12 @@ void DR_WRITE_TO_ADDR(void)
 	}
 	else
 	{
-      if (I2CSendByte(EP0BUF[0]))
+      for (idx = 0; idx < len; idx++)
 	  {
-	    nak_cnt = 2;
-      }
-	  else
-	  {
-		for (idx = 1; idx < len; idx++)
-		{
-      	  if (I2CSendByte(EP0BUF[idx]))
-		  {
-		    nak_cnt = 2 + idx;
-			break;
-		  }
+  	    if (I2CSendByte(EP0BUF[idx]))
+	    {
+	      nak_cnt = 2 + idx;
+		  break;
 	    }
       }
 	}
@@ -214,9 +203,7 @@ void DR_SET_ADDR(void)
   while(EP0CS & bmEPBUSY);
   len = EP0BCL;
   if (len == 1)
-  {
-    device_addr = EP0BUF[0];
-  }
+    device_addr = EP0BUF[0] << 1;
 }
 
 //-----------------------------------------------------------------------------
