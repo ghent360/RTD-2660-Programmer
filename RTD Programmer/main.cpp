@@ -3,76 +3,15 @@
 
 #include "stdafx.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
+#include <memory.h>
 #include "crc.h"
 #include "i2c.h"
 
-enum ECommondCommandType {
-  E_CC_NOOP = 0,
-  E_CC_WRITE = 1,
-  E_CC_READ = 2,
-  E_CC_WRITE_AFTER_WREN = 3,
-  E_CC_WRITE_AFTER_EWSR = 4,
-  E_CC_ERASE = 5
-};
-
-uint32_t SPICommonCommand(ECommondCommandType cmd_type,
-    uint8_t cmd_code,
-    uint8_t num_reads,
-    uint8_t num_writes,
-    uint32_t write_value) {
-  num_reads &= 3;
-  num_writes &= 3;
-  write_value &= 0xFFFFFF;
-  uint8_t reg_value = (cmd_type << 5) | 
-    (num_writes << 3) |
-    (num_reads << 1);
-
-  WriteReg(0x60, reg_value);
-  WriteReg(0x61, cmd_code);
-  if (num_writes > 0) {
-    WriteReg(0x64, write_value >> 16);
-    WriteReg(0x65, write_value >> 8);
-    WriteReg(0x66, write_value);
-  }
-  WriteReg(0x60, reg_value | 1); // Execute the command
-  uint8_t b;
-  do {
-    b = ReadReg(0x60);
-  } while (b & 1);  // TODO: add timeout and reset the controller
-  switch (num_reads) {
-  case 0: return 0;
-  case 1: return ReadReg(0x67);
-  case 2: return (ReadReg(0x67) << 8) | ReadReg(0x68);
-  case 3: return (ReadReg(0x67) << 16) | (ReadReg(0x68) << 8) | ReadReg(0x69);
-  }
-  return 0;
-}
-
-void SPIRead(uint32_t address, uint8_t *data, int32_t len) {
-  WriteReg(0x60, 0x46);
-  WriteReg(0x61, 0x3);
-  WriteReg(0x64, address>>16);
-  WriteReg(0x65, address>>8);
-  WriteReg(0x66, address);
-  WriteReg(0x60, 0x47); // Execute the command
-  uint8_t b;
-  do {
-    b = ReadReg(0x60);
-  } while (b & 1);  // TODO: add timeout and reset the controller
-  while (len > 0) {
-    int32_t read_len = len;
-    if (read_len > 64)
-      read_len = 64;
-    ReadBytesFromAddr(0x70, data, read_len);
-    data += read_len;
-    len -= read_len;
-  }
-}
-
 struct FlashDesc {
   const char* device_name;
-  uint32_t    jdec_id;
+  uint32_t    jedec_id;
   uint32_t    size_kb;
   uint32_t    page_size;
   uint32_t    block_size_kb;
@@ -115,6 +54,78 @@ static const FlashDesc FlashDevices[] = {
     {NULL , 0, 0, 0, 0}
 };
 
+enum ECommondCommandType {
+  E_CC_NOOP = 0,
+  E_CC_WRITE = 1,
+  E_CC_READ = 2,
+  E_CC_WRITE_AFTER_WREN = 3,
+  E_CC_WRITE_AFTER_EWSR = 4,
+  E_CC_ERASE = 5
+};
+
+uint32_t SPICommonCommand(ECommondCommandType cmd_type,
+    uint8_t cmd_code,
+    uint8_t num_reads,
+    uint8_t num_writes,
+    uint32_t write_value) {
+  num_reads &= 3;
+  num_writes &= 3;
+  write_value &= 0xFFFFFF;
+  uint8_t reg_value = (cmd_type << 5) | 
+    (num_writes << 3) |
+    (num_reads << 1);
+
+  WriteReg(0x60, reg_value);
+  WriteReg(0x61, cmd_code);
+  switch (num_writes) {
+  case 3:
+    WriteReg(0x64, write_value >> 16);
+    WriteReg(0x65, write_value >> 8);
+    WriteReg(0x66, write_value);
+    break;
+  case 2:
+    WriteReg(0x64, write_value >> 8);
+    WriteReg(0x65, write_value);
+    break;
+  case 1:
+    WriteReg(0x64, write_value);
+    break;
+  }
+  WriteReg(0x60, reg_value | 1); // Execute the command
+  uint8_t b;
+  do {
+    b = ReadReg(0x60);
+  } while (b & 1);  // TODO: add timeout and reset the controller
+  switch (num_reads) {
+  case 0: return 0;
+  case 1: return ReadReg(0x67);
+  case 2: return (ReadReg(0x67) << 8) | ReadReg(0x68);
+  case 3: return (ReadReg(0x67) << 16) | (ReadReg(0x68) << 8) | ReadReg(0x69);
+  }
+  return 0;
+}
+
+void SPIRead(uint32_t address, uint8_t *data, int32_t len) {
+  WriteReg(0x60, 0x46);
+  WriteReg(0x61, 0x3);
+  WriteReg(0x64, address>>16);
+  WriteReg(0x65, address>>8);
+  WriteReg(0x66, address);
+  WriteReg(0x60, 0x47); // Execute the command
+  uint8_t b;
+  do {
+    b = ReadReg(0x60);
+  } while (b & 1);  // TODO: add timeout and reset the controller
+  while (len > 0) {
+    int32_t read_len = len;
+    if (read_len > 64)
+      read_len = 64;
+    ReadBytesFromAddr(0x70, data, read_len);
+    data += read_len;
+    len -= read_len;
+  }
+}
+
 void PrintManufacturer(uint32_t id) {
   switch (id) {
   case 0x20: printf("ST"); break;
@@ -126,10 +137,10 @@ void PrintManufacturer(uint32_t id) {
   }
 }
 
-static const FlashDesc* FindChip(uint32_t jdec_id) {
+static const FlashDesc* FindChip(uint32_t jedec_id) {
   const FlashDesc* chip = FlashDevices;
-  while (chip->jdec_id != 0) {
-    if (chip->jdec_id == jdec_id)
+  while (chip->jedec_id != 0) {
+    if (chip->jedec_id == jedec_id)
       return chip;
     chip++;
   }
@@ -150,11 +161,125 @@ uint8_t SPIComputeCRC(uint32_t start, uint32_t end) {
   do
   {
     b = ReadReg(0x6f);
-  } while (!(b & 0x2));
+  } while (!(b & 0x2));  // TODO: add timeout and reset the controller
   return ReadReg(0x75);
 }
 
-int _tmain(int argc, _TCHAR* argv[])
+uint8_t GetManufacturerId(uint32_t jedec_id) {
+  return jedec_id >> 16;
+}
+
+void SetupChipCommands(uint32_t jedec_id) {
+  uint8_t manufacturer_id = GetManufacturerId(jedec_id);
+  switch (manufacturer_id) {
+  case 0xEF:
+    // These are the codes for Winbond
+    WriteReg(0x62, 0x6);  // Flash Write enable op code
+    WriteReg(0x63, 0x50); // Flash Write register op code
+    WriteReg(0x6a, 0x3);  // Flash Read op code.
+    WriteReg(0x6b, 0xb);  // Flash Fast read op code.
+    WriteReg(0x6d, 0x2);  // Flash program op code.
+    WriteReg(0x6e, 0x5);  // Flash read status op code.
+    break;
+  default:
+    printf("Can not handle manufacturer code %02x\n", manufacturer_id);
+    exit(-6);
+    break;
+  }
+}
+
+bool SaveFlash(const char *output_file_name, uint32_t chip_size) {
+  FILE *dump = fopen(output_file_name, "wb");
+  uint32_t addr = 0;
+  InitCRC();
+  do {
+    uint8_t buffer[1024];
+    printf("Reading addr %x\r", addr);
+    SPIRead(addr, buffer, sizeof(buffer));
+    fwrite(buffer, 1, sizeof(buffer), dump);
+    ProcessCRC(buffer, sizeof(buffer));
+    addr += sizeof(buffer);
+  } while (addr < chip_size);
+  printf("done.\n");
+  fclose(dump);
+  uint8_t data_crc = GetCRC();
+  uint8_t chip_crc = SPIComputeCRC(0, chip_size - 1);
+  printf("Received data CRC %02x\n", data_crc);
+  printf("Chip CRC %02x\n", chip_crc);
+  return data_crc == chip_crc;
+}
+
+bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
+  FILE *prog = fopen(input_file_name, "rb");
+  if (NULL == prog) {
+    printf("Can't open input file %s\n", input_file_name);
+    return false;
+  }
+
+  printf("Erasing...");fflush(stdout);
+  SPICommonCommand(E_CC_WRITE_AFTER_EWSR, 1, 0, 1, 0); // Unprotect the Status Register
+  SPICommonCommand(E_CC_WRITE_AFTER_WREN, 1, 0, 1, 0); // Unprotect the flash
+  SPICommonCommand(E_CC_ERASE, 0xc7, 0, 0, 0);         // Chip Erase
+  printf("done\n");
+
+  //RTD266x can program only 256 bytes at a time.
+  uint8_t buffer[256];
+  uint8_t b;
+  uint32_t addr = 0;
+
+  InitCRC();
+  do
+  {
+    // Wait for programming cycle to finish
+    do {
+      b = ReadReg(0x6f);
+    } while (b & 0x40);
+
+    if (feof(prog)) break;
+
+    printf("Writing addr %x\r", addr);
+    // Fill with 0xff in case we read a partial buffer.
+    memset(buffer, 0xff, sizeof(buffer));
+    fread(buffer, 1, sizeof(buffer), prog);
+
+    // Set program size-1
+    WriteReg(0x71, 255);
+
+    // Set the programming address
+    WriteReg(0x64, addr >> 16);
+    WriteReg(0x65, addr >> 8);
+    WriteReg(0x66, addr);
+
+    // Write the content to register 0x70
+    // Out USB gizmo supports max 63 bytes at a time.
+    WriteBytesToAddr(0x70, buffer, 63);
+    WriteBytesToAddr(0x70, buffer + 63, 63);
+    WriteBytesToAddr(0x70, buffer + 126, 63);
+    WriteBytesToAddr(0x70, buffer + 189, 63);
+    WriteBytesToAddr(0x70, buffer + 252, 4);
+
+    ProcessCRC(buffer, sizeof(buffer));
+    WriteReg(0x6f, 0xa0); // Start Programing
+    addr += 256;
+  } while (addr < chip_size);
+  fclose(prog);
+
+  // Wait for programming cycle to finish
+  do {
+    b = ReadReg(0x6f);
+  } while (b & 0x40);
+
+  SPICommonCommand(E_CC_WRITE_AFTER_EWSR, 1, 0, 1, 0x1c); // Unprotect the Status Register
+  SPICommonCommand(E_CC_WRITE_AFTER_WREN, 1, 0, 1, 0x1c); // Protect the flash
+
+  uint8_t data_crc = GetCRC();
+  uint8_t chip_crc = SPIComputeCRC(0, addr - 1);
+  printf("Received data CRC %02x\n", data_crc);
+  printf("Chip CRC %02x\n", chip_crc);
+  return data_crc == chip_crc;
+}
+
+int main(int argc, char* argv[])
 {
   uint8_t b;
   if (!InitI2C()) {
@@ -173,47 +298,31 @@ int _tmain(int argc, _TCHAR* argv[])
     printf("Can't enable ISP mode\n");
     return -3;
   }
-  uint32_t jdec_id;
-  jdec_id = SPICommonCommand(E_CC_READ, 0x9f, 3, 0, 0);
-  printf("JDEC ID: 0x%02x\n", jdec_id);
-  const FlashDesc* chip = FindChip(jdec_id);
+  uint32_t jedec_id;
+  jedec_id = SPICommonCommand(E_CC_READ, 0x9f, 3, 0, 0);
+  printf("JEDEC ID: 0x%02x\n", jedec_id);
+  const FlashDesc* chip = FindChip(jedec_id);
   if (NULL == chip) {
     printf("Unknown chip ID\n");
     return -4;
   }
   printf("Manufacturer ");
-  PrintManufacturer(jdec_id >> 16);
+  PrintManufacturer(GetManufacturerId(chip->jedec_id));
   printf("\n");
   printf("Chip: %s\n", chip->device_name);
   printf("Size: %dKB\n", chip->size_kb);
 
   // Setup flash command codes
-  // These are the codes for Winbond, others may varry
-  WriteReg(0x62, 0x6);  // Flash Write enable op code
-  WriteReg(0x63, 0x50); // Flash Write register op code
-  WriteReg(0x6a, 0x3);  // Flash Read op code.
-  WriteReg(0x6b, 0xb);  // Flash Fast read op code.
-  WriteReg(0x6d, 0x2);  // Flash program op code.
-  WriteReg(0x6e, 0x5);  // Flash read status op code.
+  SetupChipCommands(chip->jedec_id);
 
   b = SPICommonCommand(E_CC_READ, 0x5, 1, 0, 0);
   printf("Flash status register: 0x%02x\n", b);
-
-  FILE *dump = fopen("flash.bin", "wb");
-  uint32_t addr = 0;
-  InitCRC();
-  do {
-    uint8_t buffer[1024];
-    printf("Reading addr %x\r", addr);
-    SPIRead(addr, buffer, sizeof(buffer));
-    fwrite(buffer, 1, sizeof(buffer), dump);
-    ProcessCRC(buffer, sizeof(buffer));
-    addr += sizeof(buffer);
-  } while (addr < chip->size_kb * 1024);
-  printf("done.\n");
-  fclose(dump);
-  printf("Our CRC=0x%02x\n", GetCRC());
-  printf("Chip CRC = %02x\n", SPIComputeCRC(0, chip->size_kb * 1024 - 1));
+  
+#if 0
+  SaveFlash("flash-backup.bin", chip->size_kb * 1024);
+#else
+  ProgramFlash("pt2660.bin", chip->size_kb * 1024);
+#endif
   CloseI2C();
 	return 0;
 }
