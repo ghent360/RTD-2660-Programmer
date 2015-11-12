@@ -8,6 +8,7 @@
 #include <memory.h>
 #include "crc.h"
 #include "i2c.h"
+#include "gff.h"
 
 struct FlashDesc {
   const char* device_name;
@@ -209,13 +210,76 @@ bool SaveFlash(const char *output_file_name, uint32_t chip_size) {
   return data_crc == chip_crc;
 }
 
+uint64_t GetFileSize(FILE* file) {
+  uint64_t current_pos;
+  uint64_t result;
+  current_pos = _ftelli64(file);
+  fseek(file, 0, SEEK_END);
+  result = _ftelli64(file);
+  _fseeki64(file, current_pos, SEEK_SET);
+  return result;
+}
+
+static uint8_t* ReadFile(const char *file_name, uint32_t* size) {
+  FILE *file = fopen(file_name, "rb");
+  uint8_t* result = NULL;
+  if (NULL == file) {
+    printf("Can't open input file %s\n", file_name);
+    return result;
+  }
+  uint64_t file_size64 = GetFileSize(file);
+  if (file_size64 > 8*1024*1024) {
+    printf("This file looks to big %lld\n", file_size64);
+    fclose(file);
+    return result;
+  }
+  uint32_t file_size = (uint32_t)file_size64;
+  result = new uint8_t[file_size];
+  if (NULL == result) {
+    printf("Not enough RAM.\n");
+    fclose(file);
+    return result;
+  }
+  fread(result, 1, file_size, file);
+  fclose(file);
+  if (memcmp("GMI GFF V1.0", result, 12) == 0) {
+    // Handle GFF file
+    if (file_size < 256) {
+      printf("This file looks to small %d\n", file_size);
+      delete [] result;
+      return NULL;
+    }
+    uint32_t gff_size = ComputeGffDecodedSize(result + 256,
+      file_size - 256);
+    if (gff_size == 0) {
+      printf("GFF Decoding failed for this file\n");
+      delete [] result;
+      return NULL;
+    }
+    uint8_t* gff_data = new uint8_t[gff_size];
+    if (NULL == gff_data) {
+      printf("Not enough RAM.\n");
+      delete [] result;
+      return NULL;
+    }
+    DecodeGff(result + 256, file_size - 256, gff_data);
+    // Replace the encoded buffer with the decoded data.
+    delete [] result;
+    result = gff_data;
+    file_size = gff_size;
+  }
+  if (NULL != size) {
+    *size = file_size;
+  }
+  return result;
+}
+
 bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
-  FILE *prog = fopen(input_file_name, "rb");
+  uint32_t prog_size;
+  uint8_t* prog = ReadFile(input_file_name, &prog_size);
   if (NULL == prog) {
-    printf("Can't open input file %s\n", input_file_name);
     return false;
   }
-
   printf("Erasing...");fflush(stdout);
   SPICommonCommand(E_CC_WRITE_AFTER_EWSR, 1, 0, 1, 0); // Unprotect the Status Register
   SPICommonCommand(E_CC_WRITE_AFTER_WREN, 1, 0, 1, 0); // Unprotect the flash
@@ -226,7 +290,8 @@ bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
   uint8_t buffer[256];
   uint8_t b;
   uint32_t addr = 0;
-
+  uint8_t* data_ptr = prog;
+  uint32_t data_len = prog_size;
   InitCRC();
   do
   {
@@ -235,12 +300,16 @@ bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
       b = ReadReg(0x6f);
     } while (b & 0x40);
 
-    if (feof(prog)) break;
-
     printf("Writing addr %x\r", addr);
     // Fill with 0xff in case we read a partial buffer.
     memset(buffer, 0xff, sizeof(buffer));
-    fread(buffer, 1, sizeof(buffer), prog);
+    uint32_t len = sizeof(buffer);
+    if (len > data_len) {
+      len = data_len;
+    }
+    memcpy(buffer, data_ptr, len);
+    data_ptr += len;
+    data_len -= len;
 
     // Set program size-1
     WriteReg(0x71, 255);
@@ -261,8 +330,8 @@ bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
     ProcessCRC(buffer, sizeof(buffer));
     WriteReg(0x6f, 0xa0); // Start Programing
     addr += 256;
-  } while (addr < chip_size);
-  fclose(prog);
+  } while (addr < chip_size && data_len != 0);
+  delete [] prog;
 
   // Wait for programming cycle to finish
   do {
@@ -321,7 +390,7 @@ int main(int argc, char* argv[])
 #if 0
   SaveFlash("flash-backup.bin", chip->size_kb * 1024);
 #else
-  ProgramFlash("pt2660.bin", chip->size_kb * 1024);
+  ProgramFlash("RTD2662G.gff", chip->size_kb * 1024);
 #endif
   CloseI2C();
 	return 0;

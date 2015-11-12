@@ -79,12 +79,14 @@
     <ClInclude Include="crc.h" />
     <ClInclude Include="CyAPI.h" />
     <ClInclude Include="cyioctl.h" />
+    <ClInclude Include="gff.h" />
     <ClInclude Include="i2c.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="crc.cpp" />
+    <ClCompile Include="gff.cpp" />
     <ClCompile Include="i2c.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
