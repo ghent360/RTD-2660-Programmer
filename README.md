@@ -5,11 +5,11 @@ Realtek RTD2660/2662 programmer
 
 The Realtek RTD2662 chip sometimes mislabeled as RTD2660 is found in many cheap LCD controller boards, most popular seems to be the PCB800099. In order to support different LCD panel resolutions, one has to load the "correct" firmware on the board.
 
-If you search around you can find many different firmware images to try with this controller many matching the panels you want to use. I found that loading the firmware into the board was not for the weak of hart and requires some shady tools from eBay.
+If you search around the net you can find many different firmware images for this controller. I found that loading the firmware into the board was not for the weak of heart and requires some shady tools from eBay.
 
 Here is a project how to build a programming tool for less than $15.
 
-To build the programmer you would need a basic FX2LP device. One from amazon or ebay based on CY7C68013A would do. Install the FX2LP SDK from Cypress and flash swd.iic from the FX2LP folder on the FX2LP device.
+To build the programmer you would need a basic FX2LP device. One from amazon or ebay based on CY7C68013A would do. Install the FX2LP SDK from Cypress and use the Cypress Control Center tool to flash the i2c.iic file from the USB-I2C folder on the FX2LP device.
 
 Many other hardware devices can be used to program the LCD controller - the protocol is based on the i2c standard.
 
@@ -32,4 +32,4 @@ Building the software:
 
 There is a Windows PC project for visual studio 2010. Multiplatform support is pending.
 
-The device software needs the Keil PK51 toolchain. There is a compiled binary i2c.iic you can upload to the FX2LP device as well.
+The FX2LP device software needs the Keil PK51 toolchain.  It is a very simple firmware that implements i2c protocol and can be commanded via USB. There is a compiled binary i2c.iic you can upload to the FX2LP device as well.
