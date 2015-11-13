@@ -243,6 +243,7 @@ static uint8_t* ReadFile(const char *file_name, uint32_t* size) {
   fread(result, 1, file_size, file);
   fclose(file);
   if (memcmp("GMI GFF V1.0", result, 12) == 0) {
+    printf("Detected GFF image.\n");
     // Handle GFF file
     if (file_size < 256) {
       printf("This file looks to small %d\n", file_size);
@@ -272,6 +273,13 @@ static uint8_t* ReadFile(const char *file_name, uint32_t* size) {
     *size = file_size;
   }
   return result;
+}
+
+static bool ShouldProgramPage(uint8_t* buffer, uint32_t size) {
+  for (uint32_t idx = 0; idx < size; ++idx) {
+    if (buffer[idx] != 0xff) return true;
+  }
+  return false;
 }
 
 bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
@@ -311,24 +319,26 @@ bool ProgramFlash(const char *input_file_name, uint32_t chip_size) {
     data_ptr += len;
     data_len -= len;
 
-    // Set program size-1
-    WriteReg(0x71, 255);
+    if (ShouldProgramPage(buffer, sizeof(buffer))) {
+      // Set program size-1
+      WriteReg(0x71, 255);
 
-    // Set the programming address
-    WriteReg(0x64, addr >> 16);
-    WriteReg(0x65, addr >> 8);
-    WriteReg(0x66, addr);
+      // Set the programming address
+      WriteReg(0x64, addr >> 16);
+      WriteReg(0x65, addr >> 8);
+      WriteReg(0x66, addr);
 
-    // Write the content to register 0x70
-    // Out USB gizmo supports max 63 bytes at a time.
-    WriteBytesToAddr(0x70, buffer, 63);
-    WriteBytesToAddr(0x70, buffer + 63, 63);
-    WriteBytesToAddr(0x70, buffer + 126, 63);
-    WriteBytesToAddr(0x70, buffer + 189, 63);
-    WriteBytesToAddr(0x70, buffer + 252, 4);
+      // Write the content to register 0x70
+      // Out USB gizmo supports max 63 bytes at a time.
+      WriteBytesToAddr(0x70, buffer, 63);
+      WriteBytesToAddr(0x70, buffer + 63, 63);
+      WriteBytesToAddr(0x70, buffer + 126, 63);
+      WriteBytesToAddr(0x70, buffer + 189, 63);
+      WriteBytesToAddr(0x70, buffer + 252, 4);
 
+      WriteReg(0x6f, 0xa0); // Start Programing
+    }
     ProcessCRC(buffer, sizeof(buffer));
-    WriteReg(0x6f, 0xa0); // Start Programing
     addr += 256;
   } while (addr < chip_size && data_len != 0);
   delete [] prog;
@@ -387,10 +397,10 @@ int main(int argc, char* argv[])
   b = SPICommonCommand(E_CC_READ, 0x5, 1, 0, 0);
   printf("Flash status register: 0x%02x\n", b);
   
-#if 0
-  SaveFlash("flash-backup.bin", chip->size_kb * 1024);
+#if 1
+  SaveFlash("flash-test.bin", chip->size_kb * 1024);
 #else
-  ProgramFlash("RTD2662G.gff", chip->size_kb * 1024);
+  ProgramFlash("1024x600.bin", chip->size_kb * 1024);
 #endif
   CloseI2C();
 	return 0;
