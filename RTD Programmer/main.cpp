@@ -368,23 +368,32 @@ int main(int argc, char* argv[])
   printf("Ready\n");
   SetI2CAddr(0x4a);
 
-  if (!WriteReg(0x6f, 0x80)) {  // Enter ISP mode
-    printf("Write to 6F failed.\n");
-    return -2;
-  }
-  b = ReadReg(0x6f);
-  if (!(b & 0x80)) {
-    printf("Can't enable ISP mode\n");
-    return -3;
-  }
-  uint32_t jedec_id;
-  jedec_id = SPICommonCommand(E_CC_READ, 0x9f, 3, 0, 0);
-  printf("JEDEC ID: 0x%02x\n", jedec_id);
-  const FlashDesc* chip = FindChip(jedec_id);
-  if (NULL == chip) {
-    printf("Unknown chip ID\n");
-    return -4;
-  }
+  const FlashDesc* chip;
+  bool cnt;
+  do {
+    cnt = false;
+    if (!WriteReg(0x6f, 0x80)) {  // Enter ISP mode
+      printf("Write to 6F failed.\n");
+      //return -2;
+      cnt = true;
+      continue;
+    }
+    b = ReadReg(0x6f);
+    if (!(b & 0x80)) {
+      printf("Can't enable ISP mode\n");
+      //return -3;
+      cnt = true;
+      continue;
+    }
+    uint32_t jedec_id = SPICommonCommand(E_CC_READ, 0x9f, 3, 0, 0);
+    printf("JEDEC ID: 0x%02x\n", jedec_id);
+    chip = FindChip(jedec_id);
+    if (NULL == chip) {
+      printf("Unknown chip ID\n");
+      cnt = true;
+      continue;
+    }
+  } while(cnt);
   printf("Manufacturer ");
   PrintManufacturer(GetManufacturerId(chip->jedec_id));
   printf("\n");
@@ -397,7 +406,7 @@ int main(int argc, char* argv[])
   b = SPICommonCommand(E_CC_READ, 0x5, 1, 0, 0);
   printf("Flash status register: 0x%02x\n", b);
   
-#if 1
+#if 0
   SaveFlash("flash-test.bin", chip->size_kb * 1024);
 #else
   ProgramFlash("1024x600.bin", chip->size_kb * 1024);

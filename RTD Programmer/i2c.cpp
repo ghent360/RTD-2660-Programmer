@@ -77,7 +77,7 @@ static void ReadBytes(uint8_t *dest)
   memcpy(dest, buf, buflen);
 }
 
-void ReadBytesFromAddr(uint8_t reg, uint8_t* dest, uint8_t len)
+bool ReadBytesFromAddr(uint8_t reg, uint8_t* dest, uint8_t len)
 {
 	ept->Target    = TGT_DEVICE;
   ept->ReqType   = REQ_VENDOR;
@@ -92,6 +92,7 @@ void ReadBytesFromAddr(uint8_t reg, uint8_t* dest, uint8_t len)
 	buf[1] = len;
   ept->XferData(buf, buflen);
   ReadBytes(dest);
+  return ReadNakCnt() == 0;
 }
 
 uint8_t ReadReg(uint8_t reg)
