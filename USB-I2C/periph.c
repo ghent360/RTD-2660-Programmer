@@ -123,23 +123,31 @@ void DR_READ_FROM_ADDR(void)
   if (2 == len)
   {
     BYTE idx;
-    I2CSendAddr(device_addr, 0);
-    I2CSendByte(EP0BUF[0]);
-    I2CSendAddr(device_addr, 1);
-	data_length = EP0BUF[1];
-	if (data_length > 64)
-	{
-	  data_length = 64;
-	}
-	if (data_length > 0)
-	{
-	  data_length--;
-  	  for(idx = 0; idx < data_length;idx++)
-	  {
-	    buffer[idx] = I2CGetByte(0);
+	nak_cnt = 0;
+	data_length = 0;
+    if (I2CSendAddr(device_addr, 0)) {
+	  nak_cnt = 1;
+	} else {
+	  if (I2CSendByte(EP0BUF[0])) {
+	    nak_cnt = 2;
+      } else {
+	    I2CSendAddr(device_addr, 1);
+		data_length = EP0BUF[1];
+		if (data_length > 64)
+		{
+		  data_length = 64;
+		}
+		if (data_length > 0)
+		{
+		  data_length--;
+	  	  for(idx = 0; idx < data_length;idx++)
+		  {
+		    buffer[idx] = I2CGetByte(0);
+		  }
+		  buffer[idx] = I2CGetByte(1);
+		  data_length++;
+		}
 	  }
-	  buffer[idx] = I2CGetByte(1);
-	  data_length++;
 	}
 	I2CSendStop();
   }
