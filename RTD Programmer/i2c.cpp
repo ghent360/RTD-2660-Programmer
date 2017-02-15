@@ -9,37 +9,37 @@ static CCyControlEndPoint *ept = USBDevice.ControlEndPt;
 
 static BYTE ReadNakCnt() 
 {
-	ept->Target = TGT_DEVICE;
-	ept->ReqType = REQ_VENDOR;
-	ept->Direction = DIR_FROM_DEVICE;
-	ept->ReqCode = 0xA3;
-	ept->Value = 0;
-	ept->Index = 0;
+  ept->Target = TGT_DEVICE;
+  ept->ReqType = REQ_VENDOR;
+  ept->Direction = DIR_FROM_DEVICE;
+  ept->ReqCode = 0xA3;
+  ept->Value = 0;
+  ept->Index = 0;
 
   uint8_t buf[1];
-	LONG buflen = sizeof(buf);
+  LONG buflen = sizeof(buf);
   ept->XferData(buf, buflen);
   return buf[0];
 }
 
 void SetI2CAddr(uint8_t value) 
 {
-	ept->Target = TGT_DEVICE;
-	ept->ReqType = REQ_VENDOR;
-	ept->Direction = DIR_TO_DEVICE;
-	ept->ReqCode = 0xA5;
-	ept->Value = 0;
-	ept->Index = 0;
+  ept->Target = TGT_DEVICE;
+  ept->ReqType = REQ_VENDOR;
+  ept->Direction = DIR_TO_DEVICE;
+  ept->ReqCode = 0xA5;
+  ept->Value = 0;
+  ept->Index = 0;
 
   uint8_t buf[1];
   LONG buflen =  1;
-	buf[0] = value;
+  buf[0] = value;
   ept->XferData(buf, buflen);
 }
 
 bool WriteBytesToAddr(uint8_t reg, uint8_t* values, uint8_t len)
 {
-	ept->Target    = TGT_DEVICE;
+  ept->Target    = TGT_DEVICE;
   ept->ReqType   = REQ_VENDOR;
   ept->Direction = DIR_TO_DEVICE;
   ept->ReqCode   = 0xA2;
@@ -52,7 +52,7 @@ bool WriteBytesToAddr(uint8_t reg, uint8_t* values, uint8_t len)
     len = 63;
   }
   LONG buflen =  len + 1;
-	buf[0] = reg;
+  buf[0] = reg;
   for(int idx = 0; idx < len; idx++)
   {
     buf[1 + idx] = values[idx];
@@ -62,24 +62,28 @@ bool WriteBytesToAddr(uint8_t reg, uint8_t* values, uint8_t len)
   return ReadNakCnt() == 0;
 }
 
-static void ReadBytes(uint8_t *dest) 
+static void ReadBytes(uint8_t *dest, uint8_t len) 
 {
-	ept->Target = TGT_DEVICE;
-	ept->ReqType = REQ_VENDOR;
-	ept->Direction = DIR_FROM_DEVICE;
-	ept->ReqCode = 0xA4;
-	ept->Value = 0;
-	ept->Index = 0;
+  ept->Target = TGT_DEVICE;
+  ept->ReqType = REQ_VENDOR;
+  ept->Direction = DIR_FROM_DEVICE;
+  ept->ReqCode = 0xA4;
+  ept->Value = 0;
+  ept->Index = 0;
 
   uint8_t buf[64];
-	LONG buflen = sizeof(buf);
+  LONG buflen = sizeof(buf);
   ept->XferData(buf, buflen);
-  memcpy(dest, buf, buflen);
+  if (len > sizeof(buf))
+  {
+    len = (uint8_t)sizeof(buf);
+  }
+  memcpy(dest, buf, len);
 }
 
 bool ReadBytesFromAddr(uint8_t reg, uint8_t* dest, uint8_t len)
 {
-	ept->Target    = TGT_DEVICE;
+  ept->Target    = TGT_DEVICE;
   ept->ReqType   = REQ_VENDOR;
   ept->Direction = DIR_TO_DEVICE;
   ept->ReqCode   = 0xA1;
@@ -88,10 +92,10 @@ bool ReadBytesFromAddr(uint8_t reg, uint8_t* dest, uint8_t len)
 
   uint8_t buf[2];
   LONG buflen = sizeof(buf);
-	buf[0] = reg;
-	buf[1] = len;
+  buf[0] = reg;
+  buf[1] = len;
   ept->XferData(buf, buflen);
-  ReadBytes(dest);
+  ReadBytes(dest, len);
   return ReadNakCnt() == 0;
 }
 
