@@ -1,6 +1,14 @@
 Realtek RTD2660/2662 programmer
 ===============================
 
+Note this project is quite old. There have been sevaral ports to different hardware or languages:
+https://github.com/mushketer888/pyrtd2660i2c
+https://github.com/juancgarcia/RTD-2660-Programmer-Python
+https://github.com/adafruit/Adafruit_RTD266X_I2CFlasher
+https://github.com/static-void/rtd266x_programmer
+https://github.com/maximus64/RTD-2660-Programmer-FTDI
+https://github.com/luisfcorreia/rtd2660
+
 ##Firmware programmer for LCD controllers based on the RTD2660 or RTD2662 chips.
 
 The Realtek RTD2662 chip sometimes mislabeled as RTD2660 is found in many cheap LCD controller boards, most popular seems to be the PCB800099. In order to support different LCD panel resolutions, one has to load the "correct" firmware on the board.
