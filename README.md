@@ -8,6 +8,7 @@ Note this project is quite old. There have been sevaral ports to different hardw
 + Another linux port using VGA output <https://github.com/static-void/rtd266x_programmer>
 + FTDI MPSSE port <https://github.com/maximus64/RTD-2660-Programmer-FTDI>
 + Another python port <https://github.com/luisfcorreia/rtd2660>
++ Port to python and raspberry Pi <https://github.com/klirichek/RTD-2660-Programmer>
 
 ##Firmware programmer for LCD controllers based on the RTD2660 or RTD2662 chips.
 
